@@ -1,0 +1,26 @@
+-- Cria o login para o usuário do Windows, se não existir
+IF NOT EXISTS (
+    SELECT * FROM sys.server_principals WHERE name = N'M0098\M0098'
+)
+BEGIN
+    CREATE LOGIN [M0098\M0098] FROM WINDOWS;
+END
+GO
+
+-- Usa o banco correto
+USE [BdGold_00020];
+GO
+
+-- Cria o usuário dentro do banco, se não existir
+IF NOT EXISTS (
+    SELECT * FROM sys.database_principals WHERE name = N'M0098\M0098'
+)
+BEGIN
+    CREATE USER [M0098\M0098] FOR LOGIN [M0098\M0098];
+END
+GO
+
+-- Dá permissões de leitura e escrita
+ALTER ROLE db_datareader ADD MEMBER [M0098\M0098];
+ALTER ROLE db_datawriter ADD MEMBER [M0098\M0098];
+GO
