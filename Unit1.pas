@@ -124,10 +124,10 @@ begin
   if not Conexao then
     Exit;
 
-//  MigrarClientes;
-//  MigrarFornecedores;
-//  MigrarGrupos;
-//  MigrarProdutosPorFornecedor;
+  MigrarClientes;
+  MigrarFornecedores;
+  MigrarGrupos;
+  MigrarProdutosPorFornecedor;
   MigrarProdutos;
   MigrarProdutosPorEmpresa;
 end;
