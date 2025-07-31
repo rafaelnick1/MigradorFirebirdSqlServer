@@ -15,7 +15,7 @@ uses
   FireDAC.Stan.Def, FireDAC.Stan.Pool, System.IniFiles, System.IOUtils;
 
 type
-  TForm1 = class(TForm)
+  TMigrador = class(TForm)
     btnMigrar: TBitBtn;
     FDConnFirebird: TFDConnection;
     FDConnSQLServer: TFDConnection;
@@ -39,13 +39,13 @@ type
   end;
 
 var
-  Form1: TForm1;
+  Migrador: TMigrador;
 
 implementation
 
 {$R *.dfm}
 
-function TForm1.Conexao: Boolean;
+function TMigrador.Conexao: Boolean;
 var
   Ini: TIniFile;
   IniPath: string;
@@ -102,7 +102,7 @@ begin
   end;
 end;
 
-procedure TForm1.FormCreate(Sender: TObject);
+procedure TMigrador.FormCreate(Sender: TObject);
 begin
   QrySQLServer := TFDQuery.Create(Self);
   QrySQLServer.Connection := FDConnSQLServer;
@@ -111,13 +111,13 @@ begin
   QryFirebird.Connection := FDConnFirebird;
 end;
 
-procedure TForm1.FormDestroy(Sender: TObject);
+procedure TMigrador.FormDestroy(Sender: TObject);
 begin
   QrySQLServer.Free;
   QryFirebird.Free;
 end;
 
-procedure TForm1.btnMigrarClick(Sender: TObject);
+procedure TMigrador.btnMigrarClick(Sender: TObject);
 begin
   MemoLog.Lines.Clear;
 
@@ -132,7 +132,7 @@ begin
   MigrarProdutosPorEmpresa;
 end;
 
-procedure TForm1.MigrarClientes;
+procedure TMigrador.MigrarClientes;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -310,7 +310,7 @@ begin
   Sleep(3000);
 end;
 
-procedure TForm1.MigrarFornecedores;
+procedure TMigrador.MigrarFornecedores;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -459,7 +459,7 @@ begin
   Sleep(3000);
 end;
 
-procedure TForm1.MigrarGrupos;
+procedure TMigrador.MigrarGrupos;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -516,7 +516,7 @@ begin
   Sleep(3000);
 end;
 
-procedure TForm1.MigrarProdutosPorFornecedor;
+procedure TMigrador.MigrarProdutosPorFornecedor;
 const
   SQL_SELECT =
     'WITH CTE AS (' +
@@ -583,7 +583,7 @@ begin
   Sleep(3000);
 end;
 
-procedure TForm1.MigrarProdutos;
+procedure TMigrador.MigrarProdutos;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -688,19 +688,19 @@ begin
   Sleep(3000);
 end;
 
-procedure TForm1.MigrarProdutosPorEmpresa;
+procedure TMigrador.MigrarProdutosPorEmpresa;
 const
   SQL_SELECT =
     'SELECT ' +
     '  RIGHT(REPLICATE(''0'', 6) + CAST(I.ITE_ID AS VARCHAR(6)), 6) AS CODIGO, ' +
     '  ''001'' AS SIGLA_EMPRESA, ' +
-    '  CAST(1 AS INT) AS ICMS_TABELA, ' +
-    '  CAST(T.TBI_CUSTO AS DECIMAL(18,4)) AS VALOR_CUSTO_BRUTO, ' +
-    '  CAST(T.TBI_CUSTO AS DECIMAL(18,4)) AS VALOR_CUSTO, ' +
-    '  CAST(T.TBI_MARGEM AS DECIMAL(18,4)) AS MARGEM_LUCRO, ' +
-    '  CAST(T.TBI_VALOR AS DECIMAL(18,4)) AS VALOR_VENDA, ' +
-    '  CAST(T.TBI_COMISSAO AS DECIMAL(18,2)) AS COMISSAO, ' +
-    '  CAST(0 AS DECIMAL(18,3)) AS ESTOQUE, ' +
+    '  1 AS ICMS_TABELA, ' +
+    '  ISNULL(T.TBI_CUSTO, 0) AS VALOR_CUSTO_BRUTO, ' +
+    '  ISNULL(T.TBI_CUSTO, 0) AS VALOR_CUSTO, ' +
+    '  ISNULL(T.TBI_MARGEM, 0) AS MARGEM_LUCRO, ' +
+    '  ISNULL(T.TBI_VALOR, 0) AS VALOR_VENDA, ' +
+    '  ISNULL(T.TBI_COMISSAO, 0) AS COMISSAO, ' +
+    '  0 AS ESTOQUE, ' +
     '  ''N'' AS VENDA_ATACADO, ' +
     '  ''S'' AS VENDA_VAREJO, ' +
     '  ''001'' AS IDESTOQUE ' +
@@ -711,14 +711,11 @@ const
 var
   InsertSQL: string;
   Contador: Integer;
-
-  function FormatDecimal(Value: string): string;
-  begin
-    Result := StringReplace(Value, ',', '.', [rfReplaceAll]);
-  end;
-
+  Fmt: TFormatSettings;
 begin
   MemoLog.Lines.Add('Iniciando etapa: MigrarProdutosPorEmpresa...');
+
+  Fmt := TFormatSettings.Create('en-US');
 
   try
     QryFirebird.SQL.Text := 'DELETE FROM PRODUTOS_POR_EMPRESA';
@@ -749,13 +746,13 @@ begin
       'VENDA_VAREJO, IDESTOQUE) VALUES (' +
       QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
       QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('ICMS_TABELA').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('VALOR_CUSTO_BRUTO').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('VALOR_CUSTO').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('MARGEM_LUCRO').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('VALOR_VENDA').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('COMISSAO').AsString) + ', ' +
-      FormatDecimal(QrySQLServer.FieldByName('ESTOQUE').AsString) + ', ' +
+      IntToStr(QrySQLServer.FieldByName('ICMS_TABELA').AsInteger) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('VALOR_CUSTO_BRUTO').AsFloat, Fmt) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('VALOR_CUSTO').AsFloat, Fmt) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('MARGEM_LUCRO').AsFloat, Fmt) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('VALOR_VENDA').AsFloat, Fmt) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('COMISSAO').AsFloat, Fmt) + ', ' +
+      FloatToStr(QrySQLServer.FieldByName('ESTOQUE').AsFloat, Fmt) + ', ' +
       QuotedStr(QrySQLServer.FieldByName('VENDA_ATACADO').AsString) + ', ' +
       QuotedStr(QrySQLServer.FieldByName('VENDA_VAREJO').AsString) + ', ' +
       QuotedStr(QrySQLServer.FieldByName('IDESTOQUE').AsString) +

@@ -1,4 +1,4 @@
-object Form1: TForm1
+object Migrador: TMigrador
   Left = 0
   Top = 0
   BorderIcons = [biSystemMenu]
