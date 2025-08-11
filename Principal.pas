@@ -27,13 +27,23 @@ type
     procedure FormDestroy(Sender: TObject);
   private
     QrySQLServer, QryFirebird: TFDQuery;
-    function Conexao: Boolean;
-    procedure MigrarClientes;
-    procedure MigrarFornecedores;
-    procedure MigrarGrupos;
-    procedure MigrarProdutosPorFornecedor;
-    procedure MigrarProdutos;
-    procedure MigrarProdutosPorEmpresa;
+
+    function EstabelecerConexoes: Boolean;
+    function ConfigurarConexaoFirebird(Ini: TIniFile): Boolean;
+    function ConfigurarConexaoSQLServer(Ini: TIniFile): Boolean;
+
+    procedure MigrarDadosClientes;
+    procedure MigrarDadosFornecedores;
+    procedure MigrarDadosGrupos;
+    procedure MigrarDadosProdutosPorFornecedor;
+    procedure MigrarDadosProdutos;
+    procedure MigrarDadosProdutosPorEmpresa;
+
+    procedure LimparTabelaDestino(const NomeTabela: string);
+    procedure LogMensagem(const Mensagem: string);
+    procedure ExecutarConsultaOrigem(const SQL: string);
+    function FormatarDataParaSQL(Data: TDateTime): string;
+    function FormatFloatParaSQL(Valor: Double): string;
   public
     { Public declarations }
   end;
@@ -45,61 +55,21 @@ implementation
 
 {$R *.dfm}
 
-function TMigrador.Conexao: Boolean;
-var
-  Ini: TIniFile;
-  IniPath: string;
+{ TMigrador }
+
+procedure TMigrador.btnMigrarClick(Sender: TObject);
 begin
-  Result := False;
+  MemoLog.Lines.Clear;
 
-  IniPath := TPath.Combine(ExtractFilePath(ParamStr(0)), 'Config.ini');
-  if not FileExists(IniPath) then
-  begin
-    MemoLog.Lines.Add('Arquivo Config.ini não encontrado!');
+  if not EstabelecerConexoes then
     Exit;
-  end;
 
-  Ini := TIniFile.Create(IniPath);
-  try
-    // Conexão Firebird
-    try
-      FDConnFirebird.Params.Clear;
-      FDConnFirebird.DriverName := 'FB';
-      FDConnFirebird.Params.Add('Database=' + Ini.ReadString('Firebird', 'Database', ''));
-      FDConnFirebird.Params.Add('User_Name=' + Ini.ReadString('Firebird', 'User_Name', ''));
-      FDConnFirebird.Params.Add('Password=' + Ini.ReadString('Firebird', 'Password', ''));
-      FDConnFirebird.Params.Add('CharacterSet=' + Ini.ReadString('Firebird', 'CharacterSet', 'WIN1252'));
-      FDConnFirebird.Connected := True;
-      MemoLog.Lines.Add('Conectado ao Firebird com sucesso!');
-    except
-      on E: Exception do
-      begin
-        MemoLog.Lines.Add('Erro ao conectar Firebird: ' + E.Message);
-        Exit;
-      end;
-    end;
-
-    // Conexão SQL Server
-    try
-      FDConnSQLServer.Params.Clear;
-      FDConnSQLServer.DriverName := 'MSSQL';
-      FDConnSQLServer.Params.Add('Server=' + Ini.ReadString('SQLServer', 'Server', ''));
-      FDConnSQLServer.Params.Add('Database=' + Ini.ReadString('SQLServer', 'Database', ''));
-      FDConnSQLServer.Params.Add('OSAuthent=' + Ini.ReadString('SQLServer', 'OSAuthent', 'Yes'));
-      FDConnSQLServer.Connected := True;
-      MemoLog.Lines.Add('Conectado ao SQL Server com sucesso!');
-    except
-      on E: Exception do
-      begin
-        MemoLog.Lines.Add('Erro ao conectar SQL Server: ' + E.Message);
-        Exit;
-      end;
-    end;
-
-    Result := True;
-  finally
-    Ini.Free;
-  end;
+  MigrarDadosClientes;
+  MigrarDadosFornecedores;
+  MigrarDadosGrupos;
+  MigrarDadosProdutosPorFornecedor;
+  MigrarDadosProdutos;
+  MigrarDadosProdutosPorEmpresa;
 end;
 
 procedure TMigrador.FormCreate(Sender: TObject);
@@ -117,24 +87,71 @@ begin
   QryFirebird.Free;
 end;
 
-procedure TMigrador.btnMigrarClick(Sender: TObject);
+function TMigrador.EstabelecerConexoes: Boolean;
+var
+  Ini: TIniFile;
+  IniPath: string;
 begin
-  MemoLog.Lines.Clear;
+  Result := False;
 
-  if not Conexao then
+  IniPath := TPath.Combine(ExtractFilePath(ParamStr(0)), 'Config.ini');
+  if not FileExists(IniPath) then
+  begin
+    LogMensagem('Arquivo Config.ini não encontrado!');
     Exit;
+  end;
 
-  MigrarClientes;
-  MigrarFornecedores;
-  MigrarGrupos;
-  MigrarProdutosPorFornecedor;
-  MigrarProdutos;
-  MigrarProdutosPorEmpresa;
+  Ini := TIniFile.Create(IniPath);
+  try
+    if not ConfigurarConexaoFirebird(Ini) then Exit;
+    if not ConfigurarConexaoSQLServer(Ini) then Exit;
+
+    Result := True;
+  finally
+    Ini.Free;
+  end;
 end;
 
-procedure TMigrador.MigrarClientes;
+function TMigrador.ConfigurarConexaoFirebird(Ini: TIniFile): Boolean;
+begin
+  Result := False;
+  try
+    FDConnFirebird.Params.Clear;
+    FDConnFirebird.DriverName := 'FB';
+    FDConnFirebird.Params.Add('Database=' + Ini.ReadString('Firebird', 'Database', ''));
+    FDConnFirebird.Params.Add('User_Name=' + Ini.ReadString('Firebird', 'User_Name', ''));
+    FDConnFirebird.Params.Add('Password=' + Ini.ReadString('Firebird', 'Password', ''));
+    FDConnFirebird.Params.Add('CharacterSet=' + Ini.ReadString('Firebird', 'CharacterSet', 'WIN1252'));
+    FDConnFirebird.Connected := True;
+    LogMensagem('Conectado ao Firebird com sucesso!');
+    Result := True;
+  except
+    on E: Exception do
+      LogMensagem('Erro ao conectar Firebird: ' + E.Message);
+  end;
+end;
+
+function TMigrador.ConfigurarConexaoSQLServer(Ini: TIniFile): Boolean;
+begin
+  Result := False;
+  try
+    FDConnSQLServer.Params.Clear;
+    FDConnSQLServer.DriverName := 'MSSQL';
+    FDConnSQLServer.Params.Add('Server=' + Ini.ReadString('SQLServer', 'Server', ''));
+    FDConnSQLServer.Params.Add('Database=' + Ini.ReadString('SQLServer', 'Database', ''));
+    FDConnSQLServer.Params.Add('OSAuthent=' + Ini.ReadString('SQLServer', 'OSAuthent', 'Yes'));
+    FDConnSQLServer.Connected := True;
+    LogMensagem('Conectado ao SQL Server com sucesso!');
+    Result := True;
+  except
+    on E: Exception do
+      LogMensagem('Erro ao conectar SQL Server: ' + E.Message);
+  end;
+end;
+
+procedure TMigrador.MigrarDadosClientes;
 const
-  SQL_SELECT =
+SQL_SELECT =
     'SELECT ' +
     'RIGHT(REPLICATE(''0'', 9) + CAST(PAR.PAR_ID AS VARCHAR(9)), 9) AS CODIGO, ' +
     'LEFT(CAST(PAR.PAR_RAZAOSOCIAL AS VARCHAR(50)), 50) AS NOME, ' +
@@ -177,7 +194,11 @@ const
     'CASE WHEN PAR.PAR_TIPOPESSOA <> ''F'' AND PAR.PAR_RGINSCRICAOESTADUAL IS NOT NULL AND LTRIM(RTRIM(PAR.PAR_RGINSCRICAOESTADUAL)) <> '''' THEN ''S'' ELSE ''N'' END AS CONTRIBUINTE, ' +
     'CASE WHEN PAR.PAR_IDTIPODEOPERACAOSTATUS = 140 THEN ''S'' ELSE ''N'' END AS STATUS ' +
     'FROM PARTICIPANTES PAR ' +
-    'LEFT JOIN PARTICIPANTESENDERECOS PEN ON PAR.PAR_ID = PEN.PEN_IDPARTICIPANTE ' +
+    'LEFT JOIN (SELECT PEN_IDPARTICIPANTE, PEN_LOGRADOURO, PEN_COMPLEMENTO, PEN_BAIRRO, PEN_CEP, PEN_IDMUNICIPIO, PEN_NUMERO ' +
+    '           FROM (SELECT PEN_IDPARTICIPANTE, PEN_LOGRADOURO, PEN_COMPLEMENTO, PEN_BAIRRO, PEN_CEP, PEN_IDMUNICIPIO, PEN_NUMERO, ' +
+    '                        ROW_NUMBER() OVER (PARTITION BY PEN_IDPARTICIPANTE ORDER BY PEN_ID DESC) AS RN ' +
+    '                 FROM PARTICIPANTESENDERECOS) ranked ' +
+    '           WHERE RN = 1) PEN ON PAR.PAR_ID = PEN.PEN_IDPARTICIPANTE ' +
     'LEFT JOIN MUNICIPIOS MUN ON PEN.PEN_IDMUNICIPIO = MUN.MUN_ID ' +
     'LEFT JOIN ESTADOS EST ON MUN.MUN_IDESTADO = EST.EST_ID ' +
     'LEFT JOIN PARTICIPANTESTIPOSDEOPERACAO PTO ON PTO.PTO_IDPARTICIPANTE = PAR.PAR_ID ' +
@@ -191,126 +212,87 @@ const
     ') CONT2 ' +
     'WHERE PAR.PAR_ID NOT IN (''1'', ''3'') ' +
     'AND PTO.PTO_IDTIPODEOPERACAO = 12';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
 begin
-  try
-    QryFirebird.SQL.Text := 'DELETE FROM VENDAS_PRODUTOS';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela VENDAS_PRODUTOS limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar VENDAS_PRODUTOS: ' + E.Message);
-  end;
+  LogMensagem('Iniciando migração de clientes...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM VENDASXCFOP';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela VENDASXCFOP limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar VENDASXCFOP: ' + E.Message);
-  end;
+    LimparTabelaDestino('VENDAS_PRODUTOS');
+    LimparTabelaDestino('VENDASXCFOP');
+    LimparTabelaDestino('VENDAS');
+    LimparTabelaDestino('CLIENTES');
 
-  try
-    QryFirebird.SQL.Text := 'DELETE FROM VENDAS';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela VENDAS limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar VENDAS: ' + E.Message);
-  end;
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
 
-  try
-    QryFirebird.SQL.Text := 'DELETE FROM CLIENTES';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela CLIENTES limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar CLIENTES: ' + E.Message);
-  end;
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO CLIENTES (' +
+          'CODIGO, NOME, FANTASIA, ENDERECO, COMPLEMENTO, BAIRRO, CIDADE, CEP, ESTADO, TELEFONE01, ' +
+          'TELEFONE02, CONTATO, DATA_NASCIMENTO, PESSOA, CPF_CNPJ, RG_INSCRICAO, OBSERVACOES, DATA_INC, DATA_ALT, DATA_CADASTRO, ' +
+          'VENDA_CONVENIO, EMITE_CARTA_COBRANCA, EMITE_ALERTA, CASA_PROPRIA, NOME_PAI, NOME_MAE, NOME_CONJUGE, CPF_CONJUGE, RG_CONJUGE, DATA_NASCIMENTO_CONJUGE, ' +
+          'LOCAL_TRABALHO_CONJUGE, LIMITE_CREDITO, VENDE_VAREJO, VENDE_ATACADO, COBRAR_JUROS, CONSUMIDOR_FINAL, NUMERO, IDCIDADE, CONTRIBUINTE, STATUS) ' +
+          'VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('FANTASIA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('ENDERECO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COMPLEMENTO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('BAIRRO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CIDADE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CEP').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('ESTADO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TELEFONE01').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TELEFONE02').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CONTATO').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_NASCIMENTO').AsDateTime) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('PESSOA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CPF_CNPJ').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('RG_INSCRICAO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('OBSERVACOES').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_INC').AsDateTime) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_ALT').AsDateTime) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_CADASTRO').AsDateTime) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDA_CONVENIO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('EMITE_CARTA_COBRANCA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('EMITE_ALERTA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CASA_PROPRIA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME_PAI').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME_MAE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME_CONJUGE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CPF_CONJUGE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('RG_CONJUGE').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_NASCIMENTO_CONJUGE').AsDateTime) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('LOCAL_TRABALHO_CONJUGE').AsString) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('LIMITE_CREDITO').AsFloat) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDE_VAREJO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDE_ATACADO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COBRAR_JUROS').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CONSUMIDOR_FINAL').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NUMERO').AsString) + ', ' +
+          IntToStr(QrySQLServer.FieldByName('IDCIDADE').AsInteger) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CONTRIBUINTE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) +
+          ')';
 
-  MemoLog.Lines.Add('Iniciando etapa: MigrarClientes...');
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir cliente ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
 
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
-
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
-
-    MemoLog.Lines.Add('Inserindo cliente ' + IntToStr(Contador) + ' - CODIGO: ' + QrySQLServer.FieldByName('CODIGO').AsString);
-
-    InsertSQL :=
-      'INSERT INTO CLIENTES (' +
-      'CODIGO, NOME, FANTASIA, ENDERECO, COMPLEMENTO, BAIRRO, CIDADE, CEP, ESTADO, TELEFONE01, ' +
-      'TELEFONE02, CONTATO, DATA_NASCIMENTO, PESSOA, CPF_CNPJ, RG_INSCRICAO, OBSERVACOES, DATA_INC, DATA_ALT, DATA_CADASTRO, ' +
-      'VENDA_CONVENIO, EMITE_CARTA_COBRANCA, EMITE_ALERTA, CASA_PROPRIA, NOME_PAI, NOME_MAE, NOME_CONJUGE, CPF_CONJUGE, RG_CONJUGE, DATA_NASCIMENTO_CONJUGE, ' +
-      'LOCAL_TRABALHO_CONJUGE, LIMITE_CREDITO, VENDE_VAREJO, VENDE_ATACADO, COBRAR_JUROS, CONSUMIDOR_FINAL, NUMERO, IDCIDADE, CONTRIBUINTE, STATUS) ' +
-      'VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('FANTASIA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('ENDERECO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COMPLEMENTO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('BAIRRO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CIDADE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CEP').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('ESTADO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('TELEFONE01').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('TELEFONE02').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CONTATO').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_NASCIMENTO').AsDateTime)) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('PESSOA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CPF_CNPJ').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('RG_INSCRICAO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('OBSERVACOES').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_INC').AsDateTime)) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_ALT').AsDateTime)) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_CADASTRO').AsDateTime)) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('VENDA_CONVENIO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('EMITE_CARTA_COBRANCA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('EMITE_ALERTA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CASA_PROPRIA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME_PAI').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME_MAE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME_CONJUGE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CPF_CONJUGE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('RG_CONJUGE').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_NASCIMENTO_CONJUGE').AsDateTime)) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('LOCAL_TRABALHO_CONJUGE').AsString) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('LIMITE_CREDITO').AsFloat) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('VENDE_VAREJO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('VENDE_ATACADO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COBRAR_JUROS').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CONSUMIDOR_FINAL').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NUMERO').AsString) + ', ' +
-      IntToStr(QrySQLServer.FieldByName('IDCIDADE').AsInteger) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CONTRIBUINTE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) +
-      ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro inserindo registro ' + IntToStr(Contador) + ': ' + E.Message);
+      QrySQLServer.Next;
     end;
 
-    QrySQLServer.Next;
+    LogMensagem('Migração de clientes concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de clientes: ' + E.Message);
   end;
-
-  MemoLog.Lines.Add('Etapa MigrarClientes finalizada. Total registros: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
-procedure TMigrador.MigrarFornecedores;
+procedure TMigrador.MigrarDadosFornecedores;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -368,155 +350,123 @@ const
     ') CONT2 ' +
     'WHERE PAR.PAR_ID NOT IN (''1'', ''3'') ' +
     'AND PTO.PTO_IDTIPODEOPERACAO = 13';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
 begin
-  MemoLog.Lines.Add('Iniciando etapa: MigrarFornecedores...');
+  LogMensagem('Iniciando migração de fornecedores...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM FORNECEDORES';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela FORNECEDORES limpa antes da migração.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar tabela FORNECEDORES: ' + E.Message);
-  end;
+    LimparTabelaDestino('FORNECEDORES');
 
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
 
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO FORNECEDORES (' +
+          'CODIGO, NOME, CODIGO_ANTERIOR, FANTASIA, ENDERECO, COMPLEMENTO, BAIRRO, CIDADE, CEP, CXPOSTAL, ' +
+          'ESTADO, STATUS, TELEFONE01, TELEFONE02, FAX, CELULAR, CONTATO, RAMAL, HOMEPAGE, EMAIL, OBSERVACOES, ' +
+          'DATA_NASCIMENTO, PESSOA, SEXO, ESTADO_CIVIL, RG_INSCRICAO, CPF_CNPJ, DATA_INC, TRANSPORTADORA, USU_INC, DATA_ALT, USU_ALT, ' +
+          'PRAZO_ENTREGA, BANCO, AGENCIA, CONTA, VALOR_MINIMO_COMPRA, IDCIDADE, NUMERO) ' +
+          'VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ', ' +
+          'NULL, ' +
+          QuotedStr(QrySQLServer.FieldByName('FANTASIA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('ENDERECO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COMPLEMENTO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('BAIRRO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CIDADE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CEP').AsString) + ', ' +
+          'NULL, ' +
+          QuotedStr(QrySQLServer.FieldByName('ESTADO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TELEFONE01').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TELEFONE02').AsString) + ', ' +
+          'NULL, ' +
+          'NULL, ' +
+          QuotedStr(QrySQLServer.FieldByName('CONTATO').AsString) + ', ' +
+          'NULL, ' +
+          'NULL, ' +
+          'NULL, ' +
+          QuotedStr(QrySQLServer.FieldByName('OBSERVACOES').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_NASCIMENTO').AsDateTime) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('PESSOA').AsString) + ', ' +
+          'NULL, ' +
+          'NULL, ' +
+          QuotedStr(QrySQLServer.FieldByName('RG_INSCRICAO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CPF_CNPJ').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_INC').AsDateTime) + ', ' +
+          'NULL, ' +
+          'NULL, ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_ALT').AsDateTime) + ', ' +
+          'NULL, ' +
+          'NULL, ' +
+          'NULL, ' +
+          'NULL, ' +
+          'NULL, ' +
+          '0, ' +
+          IntToStr(QrySQLServer.FieldByName('IDCIDADE').AsInteger) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NUMERO').AsString) +
+          ')';
 
-    MemoLog.Lines.Add('Inserindo fornecedor ' + IntToStr(Contador) + ' - CODIGO: ' + QrySQLServer.FieldByName('CODIGO').AsString);
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir fornecedor ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
 
-    InsertSQL :=
-      'INSERT INTO FORNECEDORES (' +
-      'CODIGO, NOME, CODIGO_ANTERIOR, FANTASIA, ENDERECO, COMPLEMENTO, BAIRRO, CIDADE, CEP, CXPOSTAL, ' +
-      'ESTADO, STATUS, TELEFONE01, TELEFONE02, FAX, CELULAR, CONTATO, RAMAL, HOMEPAGE, EMAIL, OBSERVACOES, ' +
-      'DATA_NASCIMENTO, PESSOA, SEXO, ESTADO_CIVIL, RG_INSCRICAO, CPF_CNPJ, DATA_INC, TRANSPORTADORA, USU_INC, DATA_ALT, USU_ALT, ' +
-      'PRAZO_ENTREGA, BANCO, AGENCIA, CONTA, VALOR_MINIMO_COMPRA, IDCIDADE, NUMERO) ' +
-      'VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ', ' +
-      'NULL, ' +
-      QuotedStr(QrySQLServer.FieldByName('FANTASIA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('ENDERECO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COMPLEMENTO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('BAIRRO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CIDADE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CEP').AsString) + ', ' +
-      'NULL, ' +
-      QuotedStr(QrySQLServer.FieldByName('ESTADO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('TELEFONE01').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('TELEFONE02').AsString) + ', ' +
-      'NULL, ' +
-      'NULL, ' +
-      QuotedStr(QrySQLServer.FieldByName('CONTATO').AsString) + ', ' +
-      'NULL, ' +
-      'NULL, ' +
-      'NULL, ' +
-      QuotedStr(QrySQLServer.FieldByName('OBSERVACOES').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_NASCIMENTO').AsDateTime)) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('PESSOA').AsString) + ', ' +
-      'NULL, ' +
-      'NULL, ' +
-      QuotedStr(QrySQLServer.FieldByName('RG_INSCRICAO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CPF_CNPJ').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_INC').AsDateTime)) + ', ' +
-      'NULL, ' +
-      'NULL, ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_ALT').AsDateTime)) + ', ' +
-      'NULL, ' +
-      'NULL, ' +
-      'NULL, ' +
-      'NULL, ' +
-      'NULL, ' +
-      '0, ' +
-      IntToStr(QrySQLServer.FieldByName('IDCIDADE').AsInteger) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NUMERO').AsString) +
-      ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro inserindo fornecedor ' + IntToStr(Contador) + ': ' + E.Message);
+      QrySQLServer.Next;
     end;
 
-    QrySQLServer.Next;
+    LogMensagem('Migração de fornecedores concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de fornecedores: ' + E.Message);
   end;
-
-  MemoLog.Lines.Add('Etapa MigrarFornecedores finalizada. Total registros: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
-procedure TMigrador.MigrarGrupos;
+procedure TMigrador.MigrarDadosGrupos;
 const
   SQL_SELECT =
     'SELECT ' +
     'RIGHT(REPLICATE(''0'', 4) + CAST(IGS_ID AS VARCHAR(4)), 4) AS GRUPO, ' +
     'LEFT(IGS_NOME, 50) AS NOME ' +
     'FROM ITENSGRUPOSUBGRUPO';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
 begin
-  MemoLog.Lines.Add('Iniciando etapa: MigrarGrupos...');
+  LogMensagem('Iniciando migração de grupos...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM GRUPOS';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela GRUPOS limpa antes da migração.');
+    LimparTabelaDestino('GRUPOS');
+
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO GRUPOS (GRUPO, NOME) VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('GRUPO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ')';
+
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir grupo ' + QrySQLServer.FieldByName('GRUPO').AsString + ': ' + E.Message);
+      end;
+
+      QrySQLServer.Next;
+    end;
+
+    LogMensagem('Migração de grupos concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
   except
     on E: Exception do
-    begin
-      MemoLog.Lines.Add('Erro ao limpar tabela GRUPOS: ' + E.Message);
-      Exit;
-    end;
+      LogMensagem('Erro durante migração de grupos: ' + E.Message);
   end;
-
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
-
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
-    MemoLog.Lines.Add('Inserindo grupo ' + IntToStr(Contador) + ' - GRUPO: ' + QrySQLServer.FieldByName('GRUPO').AsString);
-
-    InsertSQL :=
-      'INSERT INTO GRUPOS (GRUPO, NOME) VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('GRUPO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro inserindo grupo ' + IntToStr(Contador) + ': ' + E.Message);
-    end;
-
-    QrySQLServer.Next;
-  end;
-
-  MemoLog.Lines.Add('Etapa MigrarGrupos finalizada. Total registros: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
-procedure TMigrador.MigrarProdutosPorFornecedor;
+procedure TMigrador.MigrarDadosProdutosPorFornecedor;
 const
   SQL_SELECT =
     'WITH CTE AS (' +
@@ -530,65 +480,48 @@ const
     ') ' +
     'SELECT CODIGO, FORNECEDOR, PADRAO, COD_PROD_FOR ' +
     'FROM CTE WHERE RN = 1';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
 begin
-  MemoLog.Lines.Add('Iniciando etapa: MigrarProdutosPorFornecedor...');
+  LogMensagem('Iniciando migração de produtos por fornecedor...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM PRODUTOS_POR_FORNECEDOR';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela PRODUTOS_POR_FORNECEDOR limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar PRODUTOS_POR_FORNECEDOR: ' + E.Message);
-  end;
+    LimparTabelaDestino('PRODUTOS_POR_FORNECEDOR');
 
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
 
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO PRODUTOS_POR_FORNECEDOR (CODIGO, FORNECEDOR, PADRAO, COD_PROD_FOR) VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('FORNECEDOR').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('PADRAO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COD_PROD_FOR').AsString) +
+          ')';
 
-    MemoLog.Lines.Add('Inserindo produto por fornecedor ' + IntToStr(Contador) +
-                      ' - CODIGO: ' + QrySQLServer.FieldByName('CODIGO').AsString +
-                      ', FORNECEDOR: ' + QrySQLServer.FieldByName('FORNECEDOR').AsString);
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir produto por fornecedor ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
 
-    InsertSQL :=
-      'INSERT INTO PRODUTOS_POR_FORNECEDOR (CODIGO, FORNECEDOR, PADRAO, COD_PROD_FOR) VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('FORNECEDOR').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('PADRAO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COD_PROD_FOR').AsString) +
-      ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro ao inserir registro ' + IntToStr(Contador) + ': ' + E.Message);
+      QrySQLServer.Next;
     end;
 
-    QrySQLServer.Next;
+    LogMensagem('Migração de produtos por fornecedor concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de produtos por fornecedor: ' + E.Message);
   end;
-
-  MemoLog.Lines.Add('Etapa MigrarProdutosPorFornecedor finalizada. Total: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
-procedure TMigrador.MigrarProdutos;
+procedure TMigrador.MigrarDadosProdutos;
 const
   SQL_SELECT =
     'SELECT ' +
     '  RIGHT(REPLICATE(''0'', 6) + CAST(I.ITE_ID AS VARCHAR(6)), 6) AS CODIGO, ' +
-    '  I.ITE_DESCRICAOPRINCIPAL AS DESCRICAO, ' +
+    '  LEFT(TRIM(I.ITE_DESCRICAOPRINCIPAL), 100) AS DESCRICAO, ' +
     '  LEFT(I.ITE_CODIGOGTIN, 13) AS CODIGO_BARRA, ' +
     '  LEFT(I.ITE_CODIGOINTERNO, 30) AS CODIGO_ANTERIOR, ' +
     '  LEFT(CAST(I.ITE_IDORIGEM AS VARCHAR(1)), 1) AS CLAS_ORIGEM, ' +
@@ -616,79 +549,62 @@ const
     'LEFT JOIN ITENSGRUPOSUBGRUPO G ON G.IGS_ID = I.ITE_IDGRUPO ' +
     'LEFT JOIN ITENSUNIDADES U ON U.IUN_ID = I.ITE_IDUNIDADEVENDA ' +
     'LEFT JOIN ITENSNCM NC ON NC.NCM_ID = I.ITE_IDNCM';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
 begin
-  MemoLog.Lines.Add('Iniciando etapa: MigrarProdutos...');
+  LogMensagem('Iniciando migração de produtos...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM PRODUTOS';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela PRODUTOS limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar PRODUTOS: ' + E.Message);
-  end;
+    LimparTabelaDestino('PRODUTOS');
 
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
 
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO PRODUTOS (' +
+          'CODIGO, DESCRICAO, CODIGO_BARRA, CODIGO_ANTERIOR, CLAS_ORIGEM, CLAS_DESPESA, COR, MARCA, DPTO_PRODUTO, ' +
+          'GRUPO, UMEDIDA, STATUS, MONTAGEM, ENTREGA, BAIXA_ESTOQUE, TIPO, COMPOSICAO, DATA_ALT, QUANTIDADE_EMBALAGEM, NCM) ' +
+          'VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('DESCRICAO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO_BARRA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO_ANTERIOR').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CLAS_ORIGEM').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CLAS_DESPESA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COR').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('MARCA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('DPTO_PRODUTO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('GRUPO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('UMEDIDA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('MONTAGEM').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('ENTREGA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('BAIXA_ESTOQUE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TIPO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('COMPOSICAO').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_ALT').AsDateTime) + ', ' +
+          QrySQLServer.FieldByName('QUANTIDADE_EMBALAGEM').AsString + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('NCM').AsString) +
+          ')';
 
-    MemoLog.Lines.Add('Inserindo produto ' + IntToStr(Contador) +
-                      ' - ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' +
-                      QrySQLServer.FieldByName('DESCRICAO').AsString);
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir produto ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
 
-    InsertSQL :=
-      'INSERT INTO PRODUTOS (' +
-      'CODIGO, DESCRICAO, CODIGO_BARRA, CODIGO_ANTERIOR, CLAS_ORIGEM, CLAS_DESPESA, COR, MARCA, DPTO_PRODUTO, ' +
-      'GRUPO, UMEDIDA, STATUS, MONTAGEM, ENTREGA, BAIXA_ESTOQUE, TIPO, COMPOSICAO, DATA_ALT, QUANTIDADE_EMBALAGEM, NCM) ' +
-      'VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('DESCRICAO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO_BARRA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO_ANTERIOR').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CLAS_ORIGEM').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('CLAS_DESPESA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COR').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('MARCA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('DPTO_PRODUTO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('GRUPO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('UMEDIDA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('MONTAGEM').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('ENTREGA').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('BAIXA_ESTOQUE').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('TIPO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('COMPOSICAO').AsString) + ', ' +
-      QuotedStr(FormatDateTime('yyyy-mm-dd', QrySQLServer.FieldByName('DATA_ALT').AsDateTime)) + ', ' +
-      QrySQLServer.FieldByName('QUANTIDADE_EMBALAGEM').AsString + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('NCM').AsString) +
-      ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro ao inserir produto ' + IntToStr(Contador) + ': ' + E.Message);
+      QrySQLServer.Next;
     end;
 
-    QrySQLServer.Next;
+    LogMensagem('Migração de produtos concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de produtos: ' + E.Message);
   end;
-
-  MemoLog.Lines.Add('Etapa MigrarProdutos finalizada. Total inserido: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
-procedure TMigrador.MigrarProdutosPorEmpresa;
+procedure TMigrador.MigrarDadosProdutosPorEmpresa;
 const
   SQL_SELECT =
     'SELECT ' +
@@ -707,74 +623,91 @@ const
     'FROM ITENS I ' +
     'LEFT JOIN TABELADEPRECOSITENS T ON T.TBI_IDITEM = I.ITE_ID ' +
     'WHERE T.TBI_IDTABELADEPRECOS = 1';
-
-var
-  InsertSQL: string;
-  Contador: Integer;
-  Fmt: TFormatSettings;
 begin
-  MemoLog.Lines.Add('Iniciando etapa: MigrarProdutosPorEmpresa...');
-
-  Fmt := TFormatSettings.Create('en-US');
+  LogMensagem('Iniciando migração de produtos por empresa...');
 
   try
-    QryFirebird.SQL.Text := 'DELETE FROM PRODUTOS_POR_EMPRESA';
-    QryFirebird.ExecSQL;
-    MemoLog.Lines.Add('Tabela PRODUTOS_POR_EMPRESA limpa.');
-  except
-    on E: Exception do
-      MemoLog.Lines.Add('Erro ao limpar PRODUTOS_POR_EMPRESA: ' + E.Message);
-  end;
+    LimparTabelaDestino('PRODUTOS_POR_EMPRESA');
 
-  QrySQLServer.Close;
-  QrySQLServer.SQL.Text := SQL_SELECT;
-  QrySQLServer.Open;
-  MemoLog.Lines.Add('Consulta executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
 
-  Contador := 0;
-  while not QrySQLServer.Eof do
-  begin
-    Inc(Contador);
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO PRODUTOS_POR_EMPRESA (' +
+          'CODIGO, SIGLA_EMPRESA, ICMS_TABELA, VALOR_CUSTO_BRUTO, VALOR_CUSTO, ' +
+          'MARGEM_LUCRO, VALOR_VENDA, COMISSAO, ESTOQUE, VENDA_ATACADO, ' +
+          'VENDA_VAREJO, IDESTOQUE) VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
+          IntToStr(QrySQLServer.FieldByName('ICMS_TABELA').AsInteger) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_CUSTO_BRUTO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_CUSTO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('MARGEM_LUCRO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_VENDA').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('COMISSAO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('ESTOQUE').AsFloat) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDA_ATACADO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDA_VAREJO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('IDESTOQUE').AsString) +
+          ')';
 
-    MemoLog.Lines.Add('Inserindo produto por empresa ' + IntToStr(Contador) +
-                      ' - ' + QrySQLServer.FieldByName('CODIGO').AsString);
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir produto por empresa ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
 
-    InsertSQL :=
-      'INSERT INTO PRODUTOS_POR_EMPRESA (' +
-      'CODIGO, SIGLA_EMPRESA, ICMS_TABELA, VALOR_CUSTO_BRUTO, VALOR_CUSTO, ' +
-      'MARGEM_LUCRO, VALOR_VENDA, COMISSAO, ESTOQUE, VENDA_ATACADO, ' +
-      'VENDA_VAREJO, IDESTOQUE) VALUES (' +
-      QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
-      IntToStr(QrySQLServer.FieldByName('ICMS_TABELA').AsInteger) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('VALOR_CUSTO_BRUTO').AsFloat, Fmt) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('VALOR_CUSTO').AsFloat, Fmt) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('MARGEM_LUCRO').AsFloat, Fmt) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('VALOR_VENDA').AsFloat, Fmt) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('COMISSAO').AsFloat, Fmt) + ', ' +
-      FloatToStr(QrySQLServer.FieldByName('ESTOQUE').AsFloat, Fmt) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('VENDA_ATACADO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('VENDA_VAREJO').AsString) + ', ' +
-      QuotedStr(QrySQLServer.FieldByName('IDESTOQUE').AsString) +
-      ')';
-
-    try
-      QryFirebird.SQL.Text := InsertSQL;
-      QryFirebird.ExecSQL;
-    except
-      on E: Exception do
-        MemoLog.Lines.Add('Erro ao inserir produto por empresa ' + IntToStr(Contador) + ': ' + E.Message + sLineBreak + InsertSQL);
+      QrySQLServer.Next;
     end;
 
-    QrySQLServer.Next;
+    LogMensagem('Migração de produtos por empresa concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de produtos por empresa: ' + E.Message);
   end;
-
-  MemoLog.Lines.Add('Etapa MigrarProdutosPorEmpresa finalizada. Total inserido: ' + IntToStr(Contador));
-  Sleep(3000);
 end;
 
+procedure TMigrador.LimparTabelaDestino(const NomeTabela: string);
+begin
+  try
+    QryFirebird.SQL.Text := 'DELETE FROM ' + NomeTabela;
+    QryFirebird.ExecSQL;
+    LogMensagem('Tabela ' + NomeTabela + ' limpa com sucesso.');
+  except
+    on E: Exception do
+      LogMensagem('Erro ao limpar tabela ' + NomeTabela + ': ' + E.Message);
+  end;
+end;
 
+procedure TMigrador.LogMensagem(const Mensagem: string);
+begin
+  MemoLog.Lines.Add(FormatDateTime('hh:nn:ss', Now) + ' - ' + Mensagem);
+  Application.ProcessMessages;
+end;
 
+procedure TMigrador.ExecutarConsultaOrigem(const SQL: string);
+begin
+  QrySQLServer.Close;
+  QrySQLServer.FetchOptions.Mode := fmAll;
+  QrySQLServer.FetchOptions.RecsMax := -1;
+  QrySQLServer.SQL.Text := SQL;
+  QrySQLServer.Open;
+end;
 
+function TMigrador.FormatarDataParaSQL(Data: TDateTime): string;
+begin
+  Result := QuotedStr(FormatDateTime('yyyy-mm-dd', Data));
+end;
+
+function TMigrador.FormatFloatParaSQL(Valor: Double): string;
+var
+  Fmt: TFormatSettings;
+begin
+  Fmt := TFormatSettings.Create('en-US');
+  Result := FloatToStr(Valor, Fmt);
+end;
 
 end.
