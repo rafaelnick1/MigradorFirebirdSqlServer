@@ -39,11 +39,19 @@ type
     procedure MigrarDadosProdutos;
     procedure MigrarDadosProdutosPorEmpresa;
 
+    procedure AtualizarEstoqueProdutos;
+
+    procedure MigrarNF;
+    procedure MigrarNFProdutos;
+
     procedure LimparTabelaDestino(const NomeTabela: string);
     procedure LogMensagem(const Mensagem: string);
     procedure ExecutarConsultaOrigem(const SQL: string);
     function FormatarDataParaSQL(Data: TDateTime): string;
     function FormatFloatParaSQL(Valor: Double): string;
+
+
+
   public
     { Public declarations }
   end;
@@ -70,6 +78,10 @@ begin
   MigrarDadosProdutosPorFornecedor;
   MigrarDadosProdutos;
   MigrarDadosProdutosPorEmpresa;
+  AtualizarEstoqueProdutos;
+  MigrarNF;
+  MigrarNFProdutos
+
 end;
 
 procedure TMigrador.FormCreate(Sender: TObject);
@@ -151,7 +163,7 @@ end;
 
 procedure TMigrador.MigrarDadosClientes;
 const
-SQL_SELECT =
+  SQL_SELECT =
     'SELECT ' +
     'RIGHT(REPLICATE(''0'', 9) + CAST(PAR.PAR_ID AS VARCHAR(9)), 9) AS CODIGO, ' +
     'LEFT(CAST(PAR.PAR_RAZAOSOCIAL AS VARCHAR(50)), 50) AS NOME, ' +
@@ -167,7 +179,7 @@ SQL_SELECT =
     'LEFT(PAR.PAR_CONTATO, 30) AS CONTATO, ' +
     'PAR.PAR_DATAABERTURANASCIMENTO AS DATA_NASCIMENTO, ' +
     'CASE WHEN PAR.PAR_TIPOPESSOA = ''F'' THEN ''Física'' ELSE ''Jurídica'' END AS PESSOA, ' +
-    'PAR.PAR_CPFCNPJ AS CPF_CNPJ, ' +
+    'REPLACE(REPLACE(REPLACE(PAR.PAR_CPFCNPJ, ''-'', ''''), ''.'', ''''), ''/'', '''') AS CPF_CNPJ, ' +
     'PAR.PAR_RGINSCRICAOESTADUAL AS RG_INSCRICAO, ' +
     'LEFT(PAR.PAR_OBSERVACAO, 2000) AS OBSERVACOES, ' +
     'PAR.PAR_DATADECADASTRO AS DATA_INC, ' +
@@ -175,7 +187,7 @@ SQL_SELECT =
     'PAR.PAR_DATADECADASTRO AS DATA_CADASTRO, ' +
     '''N'' AS VENDA_CONVENIO, ' +
     '''S'' AS EMITE_CARTA_COBRANCA, ' +
-    '''S'' AS EMITE_ALERTA, ' +
+    '''N'' AS EMITE_ALERTA, ' +
     '''N'' AS CASA_PROPRIA, ' +
     'LEFT(PAR.PAR_FILIACAOPAI, 50) AS NOME_PAI, ' +
     'LEFT(PAR.PAR_FILIACAOMAE, 50) AS NOME_MAE, ' +
@@ -192,7 +204,9 @@ SQL_SELECT =
     'LEFT(PEN.PEN_NUMERO, 30) AS NUMERO, ' +
     'CAST(MUN.MUN_ID AS INTEGER) AS IDCIDADE, ' +
     'CASE WHEN PAR.PAR_TIPOPESSOA <> ''F'' AND PAR.PAR_RGINSCRICAOESTADUAL IS NOT NULL AND LTRIM(RTRIM(PAR.PAR_RGINSCRICAOESTADUAL)) <> '''' THEN ''S'' ELSE ''N'' END AS CONTRIBUINTE, ' +
-    'CASE WHEN PAR.PAR_IDTIPODEOPERACAOSTATUS = 140 THEN ''S'' ELSE ''N'' END AS STATUS ' +
+    'CASE WHEN PAR.PAR_IDTIPODEOPERACAOSTATUS = 140 THEN ''S'' ELSE ''N'' END AS STATUS, ' +
+    ' '' '' AS MENSAGEM_ALERTA, ' +
+    ' ''001'' AS IDGRUPO ' +
     'FROM PARTICIPANTES PAR ' +
     'LEFT JOIN (SELECT PEN_IDPARTICIPANTE, PEN_LOGRADOURO, PEN_COMPLEMENTO, PEN_BAIRRO, PEN_CEP, PEN_IDMUNICIPIO, PEN_NUMERO ' +
     '           FROM (SELECT PEN_IDPARTICIPANTE, PEN_LOGRADOURO, PEN_COMPLEMENTO, PEN_BAIRRO, PEN_CEP, PEN_IDMUNICIPIO, PEN_NUMERO, ' +
@@ -201,7 +215,6 @@ SQL_SELECT =
     '           WHERE RN = 1) PEN ON PAR.PAR_ID = PEN.PEN_IDPARTICIPANTE ' +
     'LEFT JOIN MUNICIPIOS MUN ON PEN.PEN_IDMUNICIPIO = MUN.MUN_ID ' +
     'LEFT JOIN ESTADOS EST ON MUN.MUN_IDESTADO = EST.EST_ID ' +
-    'LEFT JOIN PARTICIPANTESTIPOSDEOPERACAO PTO ON PTO.PTO_IDPARTICIPANTE = PAR.PAR_ID ' +
     'OUTER APPLY ( ' +
     '  SELECT TOP 1 PCO_CONTATO FROM PARTICIPANTESCONTATOS WHERE PCO_IDPARTICIPANTE = PAR.PAR_ID ORDER BY PCO_ID ' +
     ') CONT1 ' +
@@ -211,7 +224,11 @@ SQL_SELECT =
     '  ) X WHERE X.RN = 2 ' +
     ') CONT2 ' +
     'WHERE PAR.PAR_ID NOT IN (''1'', ''3'') ' +
-    'AND PTO.PTO_IDTIPODEOPERACAO = 12';
+    'AND EXISTS ( ' +
+    '  SELECT 1 FROM PARTICIPANTESTIPOSDEOPERACAO PTO  ' +
+    '  WHERE PTO.PTO_IDPARTICIPANTE = PAR.PAR_ID  ' +
+    '  AND PTO.PTO_IDTIPODEOPERACAO IN (12, 13, 14) ' +
+    ')';
 begin
   LogMensagem('Iniciando migração de clientes...');
 
@@ -232,7 +249,8 @@ begin
           'CODIGO, NOME, FANTASIA, ENDERECO, COMPLEMENTO, BAIRRO, CIDADE, CEP, ESTADO, TELEFONE01, ' +
           'TELEFONE02, CONTATO, DATA_NASCIMENTO, PESSOA, CPF_CNPJ, RG_INSCRICAO, OBSERVACOES, DATA_INC, DATA_ALT, DATA_CADASTRO, ' +
           'VENDA_CONVENIO, EMITE_CARTA_COBRANCA, EMITE_ALERTA, CASA_PROPRIA, NOME_PAI, NOME_MAE, NOME_CONJUGE, CPF_CONJUGE, RG_CONJUGE, DATA_NASCIMENTO_CONJUGE, ' +
-          'LOCAL_TRABALHO_CONJUGE, LIMITE_CREDITO, VENDE_VAREJO, VENDE_ATACADO, COBRAR_JUROS, CONSUMIDOR_FINAL, NUMERO, IDCIDADE, CONTRIBUINTE, STATUS) ' +
+          'LOCAL_TRABALHO_CONJUGE, LIMITE_CREDITO, VENDE_VAREJO, VENDE_ATACADO, COBRAR_JUROS, CONSUMIDOR_FINAL, NUMERO, IDCIDADE, CONTRIBUINTE, STATUS, ' +
+          'IDGRUPO) ' +
           'VALUES (' +
           QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
           QuotedStr(QrySQLServer.FieldByName('NOME').AsString) + ', ' +
@@ -273,7 +291,8 @@ begin
           QuotedStr(QrySQLServer.FieldByName('NUMERO').AsString) + ', ' +
           IntToStr(QrySQLServer.FieldByName('IDCIDADE').AsInteger) + ', ' +
           QuotedStr(QrySQLServer.FieldByName('CONTRIBUINTE').AsString) + ', ' +
-          QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) +
+          QuotedStr(QrySQLServer.FieldByName('STATUS').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('IDGRUPO').AsString) +
           ')';
 
         QryFirebird.ExecSQL;
@@ -322,7 +341,7 @@ const
     'NULL AS SEXO, ' +
     'NULL AS ESTADO_CIVIL, ' +
     'PAR.PAR_RGINSCRICAOESTADUAL AS RG_INSCRICAO, ' +
-    'PAR.PAR_CPFCNPJ AS CPF_CNPJ, ' +
+    'REPLACE(REPLACE(REPLACE(PAR.PAR_CPFCNPJ, ''-'', ''''), ''.'', ''''), ''/'', '''') AS CPF_CNPJ, ' +
     'PAR.PAR_DATADECADASTRO AS DATA_INC, ' +
     'NULL AS TRANSPORTADORA, ' +
     'NULL AS USU_INC, ' +
@@ -709,5 +728,244 @@ begin
   Fmt := TFormatSettings.Create('en-US');
   Result := FloatToStr(Valor, Fmt);
 end;
+
+procedure TMigrador.MigrarNF;
+const
+  SQL_SELECT =
+    'SELECT ' +
+    '  ''NF'' + RIGHT(''0000000'' + CAST(d.DOC_NRDOCUMENTO AS VARCHAR(7)), 7) AS CODIGO, ' +
+    '  ''NF'' AS TIPO_DOCUMENTO, ' +
+    '  ''001'' as SIGLA_EMPRESA, ' +
+    '  LEFT(cdp.CDP_NOME, 15) AS FORMA_PAGAMENTO,' +
+    '  d.DOC_DATAEMISSAO AS DATA_EMISSAO, ' +
+    '  ''000000001'' AS VENDEDOR, ' +
+    '  RIGHT(REPLICATE(''0'', 9) + CAST(par.PAR_ID AS VARCHAR(9)), 9) AS CLIENTE, ' +
+    '  ''NF'' + RIGHT(''0000000'' + CAST(d.DOC_NRDOCUMENTO AS VARCHAR(7)), 7) AS CONTA_RECEBER, ' +
+    '  ROUND(SUM(di.DIT_QTDCOMERCIAL * di.DIT_VALORUNITARIOCOMERCIAL), 2) AS VALOR_PRODUTOS, ' +
+    '  ROUND(SUM(ISNULL(di.DIT_VALORDESCONTO,0)), 2) AS VALOR_DESCONTO, ' +
+    '  ROUND(SUM((di.DIT_QTDCOMERCIAL * di.DIT_VALORUNITARIOCOMERCIAL) - ISNULL(di.DIT_VALORDESCONTO,0)), 2) AS VALOR_TOTAL, ' +
+    '  ''VD'' as IDOPERACAO, ' +
+    '  CASE ' +
+    '    WHEN d.DOC_IDTIPODEOPERACAOSTATUS IN (31, 32) THEN ''S'' ' +
+    '    ELSE ''N'' ' +
+    '  END AS CANCELADO_CUPOM ' +
+    'FROM DOCUMENTOS d ' +
+    'JOIN DOCUMENTOSITENS di ON di.DIT_IDDOCUMENTOS = d.DOC_ID ' +
+    'LEFT JOIN CONDICOESDEPAGAMENTO cdp ON cdp.CDP_ID = d.DOC_IDCONDICOESDEPAGAMENTO ' +
+    'LEFT JOIN PARTICIPANTES par ON par.PAR_ID = d.DOC_IDPARTICIPANTE ' +
+    'WHERE d.DOC_IDTIPODEOPERACAO = 3 ' +
+    'GROUP BY ' +
+    '  d.DOC_ID, d.DOC_NRDOCUMENTO, d.DOC_DATAEMISSAO, d.DOC_CHAVENFE, ' +
+    '  cdp.CDP_NOME, par.PAR_ID, d.DOC_IDTIPODEOPERACAOSTATUS';
+begin
+  LogMensagem('Iniciando migração de vendas...');
+
+  try
+    LimparTabelaDestino('VENDAS_PRODUTOS');
+    LimparTabelaDestino('VENDAS');
+
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO VENDAS (' +
+          'CODIGO, TIPO_DOCUMENTO, SIGLA_EMPRESA, FORMA_PAGAMENTO, DATA_EMISSAO, ' +
+          'VENDEDOR, CLIENTE, CONTA_RECEBER, VALOR_PRODUTOS, VALOR_DESCONTO, ' +
+          'VALOR_TOTAL, IDOPERACAO, CANCELADO_CUPOM) VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TIPO_DOCUMENTO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('FORMA_PAGAMENTO').AsString) + ', ' +
+          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_EMISSAO').AsDateTime) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('VENDEDOR').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CLIENTE').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CONTA_RECEBER').AsString) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_PRODUTOS').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_DESCONTO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_TOTAL').AsFloat) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('IDOPERACAO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CANCELADO_CUPOM').AsString) +
+          ')';
+
+        QryFirebird.ExecSQL;
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir venda ' + QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
+
+      QrySQLServer.Next;
+    end;
+
+    LogMensagem('Migração de vendas concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de vendas: ' + E.Message);
+  end;
+end;
+
+procedure TMigrador.MigrarNFProdutos;
+const
+  SQL_SELECT =
+    'WITH RankedItens AS ( ' +
+    '    SELECT ' +
+    '        ''NF'' + RIGHT(''0000000'' + CAST(d.DOC_NRDOCUMENTO AS VARCHAR(7)), 7) AS CODIGO, ' +
+    '        ''NF'' AS TIPO_DOCUMENTO, ' +
+    '        di.DIT_NRITEM AS ITEM_VENDA, ' +
+    '        ''001'' AS SIGLA_EMPRESA, ' +
+    '        RIGHT(REPLICATE(''0'', 6) + CAST(di.DIT_IDITEM AS VARCHAR(6)), 6) AS PRODUTO, ' +
+    '        di.DIT_QTDCOMERCIAL, ' +
+    '        di.DIT_VALORUNITARIOCOMERCIAL, ' +
+    '        di.DIT_VALORDESCONTO, ' +
+    '        di.DIT_IDTIPODEOPERACAOSTATUS, ' +
+    '        ROW_NUMBER() OVER ( ' +
+    '            PARTITION BY d.DOC_ID, di.DIT_NRITEM  ' +
+    '            ORDER BY CASE WHEN di.DIT_IDTIPODEOPERACAOSTATUS <> 34 THEN 1 ELSE 2 END ' +
+    '        ) as RowNum ' +
+    '    FROM DOCUMENTOS d ' +
+    '    JOIN DOCUMENTOSITENS di ON di.DIT_IDDOCUMENTOS = d.DOC_ID ' +
+    '    WHERE d.DOC_IDTIPODEOPERACAO = 3 ' +
+    ') ' +
+    'SELECT  ' +
+    '    CODIGO,  ' +
+    '    TIPO_DOCUMENTO,  ' +
+    '    ITEM_VENDA,  ' +
+    '    SIGLA_EMPRESA,  ' +
+    '    PRODUTO, ' +
+    '    CAST(DIT_QTDCOMERCIAL AS DECIMAL(18,3)) AS QUANTIDADE, ' +
+    '    CAST(DIT_VALORUNITARIOCOMERCIAL AS DECIMAL(18,4)) AS VALOR_UNITARIO, ' +
+    '    CAST(-ISNULL(DIT_VALORDESCONTO, 0) AS DECIMAL(18,2)) AS VALOR_DESCONTO, ' +
+    '    CAST((DIT_QTDCOMERCIAL * DIT_VALORUNITARIOCOMERCIAL) AS DECIMAL(18,2)) AS VALOR_TOTAL, ' +
+    '    ''N'' AS REALIZAR_ENTREGA,    ' +
+    '    ''N'' AS REALIZAR_MONTAGEM, ' +
+    '    ''1'' AS IDICMS ' +
+    'FROM RankedItens ' +
+    'WHERE RowNum = 1 ' +
+    'ORDER BY CODIGO, ITEM_VENDA';
+begin
+  LogMensagem('Iniciando migração de produtos das notas fiscais...');
+
+  try
+    LimparTabelaDestino('VENDAS_PRODUTOS');
+
+    ExecutarConsultaOrigem(SQL_SELECT);
+    LogMensagem('Consulta SQL Server executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'INSERT INTO VENDAS_PRODUTOS (' +
+          'CODIGO, TIPO_DOCUMENTO, ITEM_VENDA, SIGLA_EMPRESA, PRODUTO, QUANTIDADE, ' +
+          'VALOR_UNITARIO, VALOR_DESCONTO, VALOR_TOTAL, REALIZAR_ENTREGA, REALIZAR_MONTAGEM, IDICMS) VALUES (' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('TIPO_DOCUMENTO').AsString) + ', ' +
+          IntToStr(QrySQLServer.FieldByName('ITEM_VENDA').AsInteger) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('PRODUTO').AsString) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('QUANTIDADE').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_UNITARIO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_DESCONTO').AsFloat) + ', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_TOTAL').AsFloat) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('REALIZAR_ENTREGA').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('REALIZAR_MONTAGEM').AsString) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('IDICMS').AsString) +
+          ')';
+
+        QryFirebird.ExecSQL;
+
+      except
+        on E: Exception do
+          LogMensagem('Erro ao inserir produto da venda ' + QrySQLServer.FieldByName('CODIGO').AsString +
+                     ', item ' + IntToStr(QrySQLServer.FieldByName('ITEM_VENDA').AsInteger) + ': ' + E.Message);
+      end;
+
+      QrySQLServer.Next;
+    end;
+
+    LogMensagem('Migração de produtos das notas fiscais concluída. Total: ' + IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante migração de produtos das notas fiscais: ' + E.Message);
+  end;
+end;
+
+procedure TMigrador.AtualizarEstoqueProdutos;
+const
+  SQL_ESTOQUE =
+    'SELECT ' +
+    '  RIGHT(REPLICATE(''0'', 6) + CAST(EMV_IDITEM AS VARCHAR(6)), 6) AS CODIGO, ' +
+    '  CASE WHEN SUM(EMV_QUANTIDADE) < 0 THEN 0 ELSE SUM(EMV_QUANTIDADE) END AS ESTOQUE ' +
+    'FROM ESTOQUEMOVIMENTACAO ' +
+    'WHERE EMV_IDITEM IS NOT NULL ' +
+    'GROUP BY EMV_IDITEM';
+begin
+  LogMensagem('Iniciando atualização de estoque dos produtos...');
+
+  try
+    LimparTabelaDestino('HISTORICO_ESTOQUE');
+
+    QryFirebird.SQL.Text := 'SET GENERATOR GEN_HISTORICO_ESTOQUE_ID TO 0';
+    QryFirebird.ExecSQL;
+
+    ExecutarConsultaOrigem(SQL_ESTOQUE);
+    LogMensagem('Consulta de estoque executada. Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+
+    while not QrySQLServer.Eof do
+    begin
+      try
+        QryFirebird.SQL.Text :=
+          'UPDATE PRODUTOS_POR_EMPRESA ' +
+          'SET ESTOQUE = ' + FormatFloatParaSQL(QrySQLServer.FieldByName('ESTOQUE').AsFloat) + ' ' +
+          'WHERE CODIGO = ' + QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ' ' +
+          'AND SIGLA_EMPRESA = ''001''';
+
+        QryFirebird.ExecSQL;
+
+        QryFirebird.SQL.Text :=
+          'INSERT INTO HISTORICO_ESTOQUE (' +
+          'CODIGO, SIGLA_EMPRESA, TIPO_COMPRAS_VENDAS, TIPO_ENTRADA_SAIDA, ' +
+          'TIPO_DOCUMENTO, DATA_DOCUMENTO, NRO_DOCUMENTO, EMPRESA_DOCUMENTO, ' +
+          'CLIENTE_FORNECEDOR, PRODUTO, MOTIVO_ESTOQUE, QUANTIDADE) ' +
+          'VALUES (' +
+          'GEN_ID(GEN_HISTORICO_ESTOQUE_ID, 1), ' +
+          '''001'', ' +
+          '''C'', ' +
+          '''E'', ' +
+          '''AE'', ' +
+          QuotedStr(FormatDateTime('yyyy-mm-dd', Now)) + ', ' +
+          '''0'', ' +
+          '''001'', ' +
+          '''0'', ' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+          '''Migração'', ' +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('ESTOQUE').AsFloat) +
+          ')';
+
+        QryFirebird.ExecSQL;
+
+      except
+        on E: Exception do
+          LogMensagem('Erro ao atualizar estoque do produto ' +
+                     QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
+      end;
+
+      QrySQLServer.Next;
+    end;
+
+    LogMensagem('Atualização de estoque concluída. Total de produtos atualizados: ' +
+                IntToStr(QrySQLServer.RecordCount));
+  except
+    on E: Exception do
+      LogMensagem('Erro durante atualização de estoque: ' + E.Message);
+  end;
+end;
+
+
+
+
+
 
 end.
