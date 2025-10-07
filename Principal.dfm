@@ -3,7 +3,7 @@ object Migrador: TMigrador
   Top = 0
   BorderIcons = [biSystemMenu]
   BorderStyle = bsDialog
-  Caption = 'Migrador'
+  Caption = 'FireSQL'
   ClientHeight = 376
   ClientWidth = 584
   Color = clWhite
@@ -33,10 +33,10 @@ object Migrador: TMigrador
   object lblSubtitle: TLabel
     Left = 201
     Top = 80
-    Width = 144
+    Width = 171
     Height = 21
     Alignment = taCenter
-    Caption = 'MySQL para Firebird'
+    Caption = 'SQL Server para Firebird'
     Font.Charset = DEFAULT_CHARSET
     Font.Color = clGray
     Font.Height = -16
@@ -208,12 +208,8 @@ object Migrador: TMigrador
     Left = 40
     Top = 96
   end
-  object FDConnMySQL: TFDConnection
+  object FDConnSQLServer: TFDConnection
     Left = 40
     Top = 160
-  end
-  object FDPhysMySQLDriverLink1: TFDPhysMySQLDriverLink
-    Left = 470
-    Top = 152
   end
 end
