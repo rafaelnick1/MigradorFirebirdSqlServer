@@ -93,35 +93,35 @@ begin
 
   Limpar;
 
-  MigrarDadosClientes;
-  MigrarDadosFornecedores;
-  MigrarDadosGrupos;
-  MigrarDadosProdutosPorFornecedor;
-  MigrarDadosProdutos;
-  MigrarDadosProdutosPorEmpresa;
-  AtualizarEstoqueProdutos;
+//  MigrarDadosClientes;
+//  MigrarDadosFornecedores;
+//  MigrarDadosGrupos;
+//  MigrarDadosProdutosPorFornecedor;
+//  MigrarDadosProdutos;
+//  MigrarDadosProdutosPorEmpresa;
+//  AtualizarEstoqueProdutos;
+//
+//  MigrarNF;
+//  MigrarNFProdutos;
+//  MigrarVendasXNFE;
+//  MigrarNFContasReceber;
+//
+//  MigrarPE;
+//  MigrarPEProdutos;
+//  MigrarPEContasReceber;
+//
+//  MigrarCF;
+//  MigrarCFProdutos;
+//  MigrarCFContasReceber;
+//
+//  MigrarVendasXSAT;
+//
+//  MigrarSAT;
+//  MigrarSATProdutos;
+//  MigrarSATContasReceber;
 
-  MigrarNF;
-  MigrarNFProdutos;
-  MigrarVendasXNFE;
-  MigrarNFContasReceber;
-
-  MigrarPE;
-  MigrarPEProdutos;
-  MigrarPEContasReceber;
-
-  MigrarCF;
-  MigrarCFProdutos;
-  MigrarCFContasReceber;
-
-  MigrarVendasXSAT;
-
-  MigrarSAT;
-  MigrarSATProdutos;
-  MigrarSATContasReceber;
-
-//  MigrarNFCompra;
-//  MigrarNFContasPagar;
+  MigrarNFCompra;
+  MigrarNFContasPagar;
 end;
 
 procedure TMigrador.FormCreate(Sender: TObject);
@@ -204,26 +204,26 @@ end;
 
 procedure TMigrador.Limpar;
 begin
-  LimparTabelaDestino('VENDAS_PRODUTOS');
-  LimparTabelaDestino('VENDAS');
-  LimparTabelaDestino('CONTAS_RECEBER');
-
-
-  LimparTabelaDestino('VENDASXCFOP');
-  LimparTabelaDestino('VENDASXNFE');
-
-  LimparTabelaDestino('VENDASXSAT');
-
-  LimparTabelaDestino('CLIENTES');
-
-  LimparTabelaDestino('GRUPOS');
-  LimparTabelaDestino('FORNECEDORES');
-
-  LimparTabelaDestino('PRODUTOS');
-  LimparTabelaDestino('PRODUTOS_POR_EMPRESA');
-  LimparTabelaDestino('PRODUTOS_POR_FORNECEDOR');
-
-  LimparTabelaDestino('HISTORICO_ESTOQUE');
+//  LimparTabelaDestino('VENDAS_PRODUTOS');
+//  LimparTabelaDestino('VENDAS');
+//  LimparTabelaDestino('CONTAS_RECEBER');
+//
+//
+//  LimparTabelaDestino('VENDASXCFOP');
+//  LimparTabelaDestino('VENDASXNFE');
+//
+//  LimparTabelaDestino('VENDASXSAT');
+//
+//  LimparTabelaDestino('CLIENTES');
+//
+//  LimparTabelaDestino('GRUPOS');
+//  LimparTabelaDestino('FORNECEDORES');
+//
+//  LimparTabelaDestino('PRODUTOS');
+//  LimparTabelaDestino('PRODUTOS_POR_EMPRESA');
+//  LimparTabelaDestino('PRODUTOS_POR_FORNECEDOR');
+//
+//  LimparTabelaDestino('HISTORICO_ESTOQUE');
 
   LimparTabelaDestino('NF_COMPRA');
   LimparTabelaDestino('CONTAS_PAGAR');
@@ -2058,6 +2058,13 @@ end;
 
 
 
+
+
+
+
+
+
+
 procedure TMigrador.MigrarNFCompra;
 const
   SQL_SELECT =
@@ -2070,18 +2077,18 @@ const
     '    SUM(dp.DDU_VALORTOTALGERAL) AS VALOR_TOTAL ' +
     '  FROM DOCUMENTOS d ' +
     '  LEFT JOIN DOCUMENTOSDUPLICATAS dp ON dp.DDU_IDDOCUMENTOS = d.DOC_ID ' +
-    '  WHERE d.DOC_IDTIPODEOPERACAO = 5 ' +     // NC
+    '  WHERE d.DOC_IDTIPODEOPERACAO = 5 ' +  // NC
     '    AND d.DOC_IDTIPODEOPERACAOSTATUS <> 34 ' +
     '    AND d.DOC_NRDOCUMENTO IS NOT NULL ' +
     '  GROUP BY d.DOC_ID, d.DOC_IDPARTICIPANTE, d.DOC_NRDOCUMENTO' +
     ')' +
     'SELECT ' +
-    '  ''NC'' + RIGHT(REPLICATE(''0'', 7) + CAST(ROW_NUMBER() OVER (ORDER BY DOC_ID) AS VARCHAR(7)), 7) AS CODIGO, ' +
+    '  RIGHT(''000000000'' + CAST(DOC_ID AS VARCHAR(9)), 9) AS CODIGO, ' +
     '  ''001'' AS SIGLA_EMPRESA, ' +
     '  ''NC'' AS TIPO_DOCUMENTO, ' +
     '  ''C'' AS TIPO_MOVIMENTO, ' +
     '  ''000007'' AS OPERACAO_FISCAL, ' +
-    '  RIGHT(REPLICATE(''0'',6) + CAST(DOC_IDPARTICIPANTE AS VARCHAR(6)),6) AS FORNECEDOR, ' +
+    '  RIGHT(''000000'' + CAST(DOC_IDPARTICIPANTE AS VARCHAR(6)),6) AS FORNECEDOR, ' +
     '  DOC_NRDOCUMENTO AS NUMERO_NF_FORNECEDOR, ' +
     '  DATA_EMISSAO, ' +
     '  DATA_EMISSAO AS DATA_INC, ' +
@@ -2132,17 +2139,20 @@ begin
   end;
 end;
 
+
+
+
 procedure TMigrador.MigrarNFContasPagar;
 const
   SQL_SELECT =
   'SELECT ' +
-      '  ROW_NUMBER() OVER (ORDER BY d.DOC_ID) AS CODIGO_SEQ, ' +
+      '  RIGHT(''000000000'' + CAST(d.DOC_ID AS VARCHAR(9)), 9) AS CODIGO, ' +
       '  ROW_NUMBER() OVER (PARTITION BY d.DOC_ID ORDER BY dp.DDU_ID) AS PARCELA, ' +
       '  1 AS SUBPARCELA, ' +
       '  ''001'' AS SIGLA_EMPRESA, ' +
       '  ''NC'' AS TIPO_DOCUMENTO, ' +
       '  ''DUPL'' AS TIPO_TITULO, ' +
-      '  RIGHT(REPLICATE(''0'',6) + CAST(d.DOC_IDPARTICIPANTE AS VARCHAR(6)),6) AS FORNECEDOR, ' +
+      '  RIGHT(''000000'' + CAST(d.DOC_IDPARTICIPANTE AS VARCHAR(6)),6) AS FORNECEDOR, ' +
       '  dp.DDU_DATAEMISSAO AS DATA_EMISSAO, ' +
       '  dp.DDU_DATAVENCIMENTO AS DATA_VCTO, ' +
       '  dpa.DPA_DATAPAGAMENTO AS DATA_PGTO, ' +
@@ -2175,7 +2185,7 @@ begin
           'CODIGO, PARCELA, SUBPARCELA, SIGLA_EMPRESA, TIPO_DOCUMENTO, TIPO_TITULO, FORNECEDOR, ' +
           'DATA_EMISSAO, DATA_VCTO, DATA_PGTO, PORTADOR, CONTA_CORRENTE, VLR_ORIGINAL, VLR_JUROS_DIA, ' +
           'VLR_MULTA, VLR_DESCONTO, VLR_TOTAL, NRO_DOC_FORNECEDOR, STATUS_CONFERIDO, STATUS_LIBERACAO) VALUES (' +
-          QuotedStr(FormatFloat('000000000', QrySQLServer.FieldByName('CODIGO_SEQ').AsInteger)) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
           IntToStr(QrySQLServer.FieldByName('PARCELA').AsInteger) + ', ' +
           IntToStr(QrySQLServer.FieldByName('SUBPARCELA').AsInteger) + ', ' +
           QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
@@ -2201,8 +2211,8 @@ begin
         QryFirebird.ExecSQL;
       except
         on E: Exception do
-          LogMensagem('Erro ao inserir conta a pagar do doc ' +
-            QrySQLServer.FieldByName('CODIGO_SEQ').AsString + ': ' + E.Message);
+          LogMensagem('Erro ao inserir Contas a Pagar ' +
+            QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
       end;
 
       QrySQLServer.Next;
