@@ -49,9 +49,6 @@ type
     procedure MigrarVendasXNFE;
     procedure MigrarNFContasReceber;
 
-    procedure MigrarNFCompra;
-    procedure MigrarNFContasPagar;
-
     procedure MigrarPE;
     procedure MigrarPEProdutos;
     procedure MigrarPEContasReceber;
@@ -65,11 +62,16 @@ type
     procedure MigrarVendasXSAT;
     procedure MigrarSATContasReceber;
 
+    procedure MigrarNFCompra;
+    procedure MigrarNFContasPagar;
+    procedure MigrarNFCompraProdutos;
+
     procedure LimparTabelaDestino(const NomeTabela: string);
     procedure LogMensagem(const Mensagem: string);
     procedure ExecutarConsultaOrigem(const SQL: string);
     function FormatarDataParaSQL(Data: TDateTime): string;
     function FormatFloatParaSQL(Valor: Double): string;
+
 
   public
     { Public declarations }
@@ -93,35 +95,36 @@ begin
 
   Limpar;
 
-//  MigrarDadosClientes;
-//  MigrarDadosFornecedores;
-//  MigrarDadosGrupos;
-//  MigrarDadosProdutosPorFornecedor;
-//  MigrarDadosProdutos;
-//  MigrarDadosProdutosPorEmpresa;
-//  AtualizarEstoqueProdutos;
-//
-//  MigrarNF;
-//  MigrarNFProdutos;
-//  MigrarVendasXNFE;
-//  MigrarNFContasReceber;
-//
-//  MigrarPE;
-//  MigrarPEProdutos;
-//  MigrarPEContasReceber;
-//
-//  MigrarCF;
-//  MigrarCFProdutos;
-//  MigrarCFContasReceber;
-//
-//  MigrarVendasXSAT;
-//
-//  MigrarSAT;
-//  MigrarSATProdutos;
-//  MigrarSATContasReceber;
+  MigrarDadosClientes;
+  MigrarDadosFornecedores;
+  MigrarDadosGrupos;
+  MigrarDadosProdutosPorFornecedor;
+  MigrarDadosProdutos;
+  MigrarDadosProdutosPorEmpresa;
+  AtualizarEstoqueProdutos;
+
+  MigrarNF;
+  MigrarNFProdutos;
+  MigrarVendasXNFE;
+  MigrarNFContasReceber;
+
+  MigrarPE;
+  MigrarPEProdutos;
+  MigrarPEContasReceber;
+
+  MigrarCF;
+  MigrarCFProdutos;
+  MigrarCFContasReceber;
+
+  MigrarVendasXSAT;
+
+  MigrarSAT;
+  MigrarSATProdutos;
+  MigrarSATContasReceber;
 
   MigrarNFCompra;
   MigrarNFContasPagar;
+  MigrarNFCompraProdutos;
 end;
 
 procedure TMigrador.FormCreate(Sender: TObject);
@@ -204,29 +207,30 @@ end;
 
 procedure TMigrador.Limpar;
 begin
-//  LimparTabelaDestino('VENDAS_PRODUTOS');
-//  LimparTabelaDestino('VENDAS');
-//  LimparTabelaDestino('CONTAS_RECEBER');
-//
-//
-//  LimparTabelaDestino('VENDASXCFOP');
-//  LimparTabelaDestino('VENDASXNFE');
-//
-//  LimparTabelaDestino('VENDASXSAT');
-//
-//  LimparTabelaDestino('CLIENTES');
-//
-//  LimparTabelaDestino('GRUPOS');
-//  LimparTabelaDestino('FORNECEDORES');
-//
-//  LimparTabelaDestino('PRODUTOS');
-//  LimparTabelaDestino('PRODUTOS_POR_EMPRESA');
-//  LimparTabelaDestino('PRODUTOS_POR_FORNECEDOR');
-//
-//  LimparTabelaDestino('HISTORICO_ESTOQUE');
+  LimparTabelaDestino('VENDAS_PRODUTOS');
+  LimparTabelaDestino('VENDAS');
+  LimparTabelaDestino('CONTAS_RECEBER');
 
-  LimparTabelaDestino('NF_COMPRA');
+
+  LimparTabelaDestino('VENDASXCFOP');
+  LimparTabelaDestino('VENDASXNFE');
+
+  LimparTabelaDestino('VENDASXSAT');
+
+  LimparTabelaDestino('CLIENTES');
+
+  LimparTabelaDestino('GRUPOS');
+  LimparTabelaDestino('FORNECEDORES');
+
+  LimparTabelaDestino('PRODUTOS');
+  LimparTabelaDestino('PRODUTOS_POR_EMPRESA');
+  LimparTabelaDestino('PRODUTOS_POR_FORNECEDOR');
+
+  LimparTabelaDestino('HISTORICO_ESTOQUE');
+
   LimparTabelaDestino('CONTAS_PAGAR');
+  LimparTabelaDestino('NF_COMPRA');
+  LimparTabelaDestino('ORDENS_COMPRA_PRODUTOS');
 end;
 
 procedure TMigrador.LimparTabelaDestino(const NomeTabela: string);
@@ -2058,13 +2062,6 @@ end;
 
 
 
-
-
-
-
-
-
-
 procedure TMigrador.MigrarNFCompra;
 const
   SQL_SELECT =
@@ -2073,6 +2070,7 @@ const
     '    d.DOC_ID, ' +
     '    d.DOC_IDPARTICIPANTE, ' +
     '    d.DOC_NRDOCUMENTO, ' +
+    '    d.DOC_CHAVENFE, ' +
     '    MIN(dp.DDU_DATAEMISSAO) AS DATA_EMISSAO, ' +
     '    SUM(dp.DDU_VALORTOTALGERAL) AS VALOR_TOTAL ' +
     '  FROM DOCUMENTOS d ' +
@@ -2080,7 +2078,7 @@ const
     '  WHERE d.DOC_IDTIPODEOPERACAO = 5 ' +  // NC
     '    AND d.DOC_IDTIPODEOPERACAOSTATUS <> 34 ' +
     '    AND d.DOC_NRDOCUMENTO IS NOT NULL ' +
-    '  GROUP BY d.DOC_ID, d.DOC_IDPARTICIPANTE, d.DOC_NRDOCUMENTO' +
+    '  GROUP BY d.DOC_ID, d.DOC_IDPARTICIPANTE, d.DOC_NRDOCUMENTO, d.DOC_CHAVENFE' +
     ')' +
     'SELECT ' +
     '  RIGHT(''000000000'' + CAST(DOC_ID AS VARCHAR(9)), 9) AS CODIGO, ' +
@@ -2092,7 +2090,8 @@ const
     '  DOC_NRDOCUMENTO AS NUMERO_NF_FORNECEDOR, ' +
     '  DATA_EMISSAO, ' +
     '  DATA_EMISSAO AS DATA_INC, ' +
-    '  VALOR_TOTAL ' +
+    '  VALOR_TOTAL, ' +
+    '  DOC_CHAVENFE AS CHAVE_NFE ' +
     'FROM NF_AGRUPADA ' +
     'ORDER BY DOC_ID';
 begin
@@ -2108,7 +2107,7 @@ begin
         QryFirebird.SQL.Text :=
           'INSERT INTO NF_COMPRA (' +
           'CODIGO, SIGLA_EMPRESA, TIPO_DOCUMENTO, TIPO_MOVIMENTO, OPERACAO_FISCAL, ' +
-          'FORNECEDOR, NUMERO_NF_FORNECEDOR, DATA_EMISSAO, DATA_INC, VALOR_TOTAL) VALUES (' +
+          'FORNECEDOR, NUMERO_NF_FORNECEDOR, DATA_EMISSAO, DATA_INC, VALOR_TOTAL, CHAVE_NFE) VALUES (' +
           QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
           QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
           QuotedStr(QrySQLServer.FieldByName('TIPO_DOCUMENTO').AsString) + ', ' +
@@ -2118,7 +2117,8 @@ begin
           QuotedStr(QrySQLServer.FieldByName('NUMERO_NF_FORNECEDOR').AsString) + ', ' +
           FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_EMISSAO').AsDateTime) + ', ' +
           FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_INC').AsDateTime) + ', ' +
-          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_TOTAL').AsFloat) +
+          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_TOTAL').AsFloat) + ', ' +
+          QuotedStr(QrySQLServer.FieldByName('CHAVE_NFE').AsString) +
           ')';
 
         QryFirebird.ExecSQL;
@@ -2138,9 +2138,6 @@ begin
       LogMensagem('Erro durante migração de NF de Compra: ' + E.Message);
   end;
 end;
-
-
-
 
 procedure TMigrador.MigrarNFContasPagar;
 const
@@ -2171,12 +2168,10 @@ const
   'ORDER BY d.DOC_ID, dp.DDU_ID';
 begin
   LogMensagem('Iniciando migração de Contas a Pagar...');
-
   try
     ExecutarConsultaOrigem(SQL_SELECT);
     LogMensagem('Registros encontrados: ' +
       IntToStr(QrySQLServer.RecordCount));
-
     while not QrySQLServer.Eof do
     begin
       try
@@ -2207,23 +2202,92 @@ begin
           QuotedStr(QrySQLServer.FieldByName('NRO_DOC_FORNECEDOR').AsString) + ', ' +
           '''S'', ''S''' +
           ')';
-
         QryFirebird.ExecSQL;
       except
         on E: Exception do
           LogMensagem('Erro ao inserir Contas a Pagar ' +
             QrySQLServer.FieldByName('CODIGO').AsString + ': ' + E.Message);
       end;
-
       QrySQLServer.Next;
     end;
-
     LogMensagem('Migração de Contas a Pagar concluída. Total: ' +
       IntToStr(QrySQLServer.RecordCount));
   except
     on E: Exception do
       LogMensagem('Erro durante migração de Contas a Pagar: ' + E.Message);
   end;
+end;
+
+procedure TMigrador.MigrarNFCompraProdutos;
+const
+  SQL_SELECT =
+    'SELECT ' +
+    '  RIGHT(''000000000'' + CAST(di.DIT_IDDOCUMENTOS AS VARCHAR(9)), 9) AS CODIGO, ' +
+    '  RIGHT(''000000'' + CAST(d.DOC_IDPARTICIPANTE AS VARCHAR(6)),6) AS CODIGO_FORNECEDOR, ' +
+    '  ''001'' AS SIGLA_EMPRESA, ' +
+    '  RIGHT(''000000'' + CAST(di.DIT_IDITEM AS VARCHAR(6)),6) AS PRODUTO, ' +
+    '  ''201'' AS CLAS_DESPESA, ' +
+    '  di.DIT_QTDCOMERCIAL AS QUANTIDADE, ' +
+    '  di.DIT_VALORUNITARIOCOMERCIAL AS VALOR_UNITARIO, ' +
+    '  (di.DIT_QTDCOMERCIAL * di.DIT_VALORUNITARIOCOMERCIAL) AS VALOR_TOTAL, ' +
+    '  ISNULL(di.DIT_VALORDESCONTO, 0) AS VALOR_DESCONTO, ' +
+    '  MIN(dp.DDU_DATAEMISSAO) AS DATA_EMISSAO ' +
+    'FROM DOCUMENTOS d ' +
+    '  LEFT JOIN DOCUMENTOSITENS di ON di.DIT_IDDOCUMENTOS = d.DOC_ID ' +
+    '  LEFT JOIN DOCUMENTOSDUPLICATAS dp ON dp.DDU_IDDOCUMENTOS = d.DOC_ID ' +
+    'WHERE d.DOC_IDTIPODEOPERACAO = 5 ' +  // NF Compra
+    '  AND d.DOC_IDTIPODEOPERACAOSTATUS <> 34 ' +
+    '  AND d.DOC_NRDOCUMENTO IS NOT NULL ' +
+    'GROUP BY ' +
+    '  di.DIT_IDDOCUMENTOS, d.DOC_IDPARTICIPANTE, di.DIT_IDITEM, ' +
+    '  di.DIT_QTDCOMERCIAL, di.DIT_VALORUNITARIOCOMERCIAL, di.DIT_VALORDESCONTO ' +
+    'ORDER BY di.DIT_IDDOCUMENTOS';
+begin
+  // A COMPRA VEM COM PRODUTO REPETIDO O QUE MUDA EH O CODBARRAS
+
+//  LogMensagem('Iniciando migração de NF Compra Produtos -> ORDENS_COMPRA_PRODUTOS');
+//
+//  try
+//    ExecutarConsultaOrigem(SQL_SELECT);
+//    LogMensagem('Registros encontrados: ' + IntToStr(QrySQLServer.RecordCount));
+//
+//    while not QrySQLServer.Eof do
+//    begin
+//      try
+//        QryFirebird.SQL.Text :=
+//          'INSERT INTO ORDENS_COMPRA_PRODUTOS (' +
+//          'CODIGO, PRODUTO, SIGLA_EMPRESA, CODIGO_FORNECEDOR, ' +
+//          'CLAS_DESPESA, QUANTIDADE, VALOR_UNITARIO, VALOR_TOTAL, ' +
+//          'VALOR_DESCONTO, DATA_INC, USU_INC) VALUES (' +
+//          QuotedStr(QrySQLServer.FieldByName('CODIGO').AsString) + ', ' +
+//          QuotedStr(QrySQLServer.FieldByName('PRODUTO').AsString) + ', ' +
+//          QuotedStr(QrySQLServer.FieldByName('SIGLA_EMPRESA').AsString) + ', ' +
+//          QuotedStr(QrySQLServer.FieldByName('CODIGO_FORNECEDOR').AsString) + ', ' +
+//          QuotedStr(QrySQLServer.FieldByName('CLAS_DESPESA').AsString) + ', ' +
+//          FormatFloatParaSQL(QrySQLServer.FieldByName('QUANTIDADE').AsFloat) + ', ' +
+//          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_UNITARIO').AsFloat) + ', ' +
+//          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_TOTAL').AsFloat) + ', ' +
+//          FormatFloatParaSQL(QrySQLServer.FieldByName('VALOR_DESCONTO').AsFloat) + ', ' +
+//          FormatarDataParaSQL(QrySQLServer.FieldByName('DATA_EMISSAO').AsDateTime) + ', ' +
+//          QuotedStr('MIGRADOR') + ')';
+//
+//        QryFirebird.ExecSQL;
+//      except
+//        on E: Exception do
+//          LogMensagem('Erro ao inserir produto da NF ' +
+//            QrySQLServer.FieldByName('CODIGO').AsString + ' - ' +
+//            QrySQLServer.FieldByName('PRODUTO').AsString + ': ' + E.Message);
+//      end;
+//
+//      QrySQLServer.Next;
+//    end;
+//
+//    LogMensagem('Migração de produtos da NF Compra concluída. Total: ' +
+//      IntToStr(QrySQLServer.RecordCount));
+//  except
+//    on E: Exception do
+//      LogMensagem('Erro durante migração de NF Compra Produtos: ' + E.Message);
+//  end;
 end;
 
 
